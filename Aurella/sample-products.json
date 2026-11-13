@@ -1,0 +1,114 @@
+[
+  {
+    "id": "sample-1",
+    "name": "Daily Gel Cleanser",
+    "category": "Cleansers",
+    "skin": "Oily skin",
+    "concern": "Excess oil",
+    "keyIngredients": "Glycerin",
+    "brand": "Field & Form · Demo",
+    "description": "Fictional sample listing for previewing the Aurélla catalog.",
+    "ingredients": "",
+    "usage": "",
+    "warnings": "",
+    "status": "published",
+    "featured": true,
+    "photos": [],
+    "variants": [
+      {
+        "id": "sample-variant-1",
+        "label": "150 ml",
+        "price": 2450,
+        "stock": 12,
+        "sku": "DEMO-CLN",
+        "swatch": "",
+        "photo": ""
+      }
+    ],
+    "revision": 1
+  },
+  {
+    "id": "sample-2",
+    "name": "Ceramide Comfort Cream",
+    "category": "Moisturisers",
+    "skin": "Dry skin",
+    "concern": "Dryness",
+    "keyIngredients": "Ceramides",
+    "brand": "Studio Petal · Demo",
+    "description": "Fictional sample listing for previewing the Aurélla catalog.",
+    "ingredients": "",
+    "usage": "",
+    "warnings": "",
+    "status": "published",
+    "featured": true,
+    "photos": [],
+    "variants": [
+      {
+        "id": "sample-variant-2",
+        "label": "50 ml",
+        "price": 3650,
+        "stock": 8,
+        "sku": "DEMO-CRM",
+        "swatch": "",
+        "photo": ""
+      }
+    ],
+    "revision": 1
+  },
+  {
+    "id": "sample-3",
+    "name": "Hydration Drops",
+    "category": "Serums",
+    "skin": "All skin types",
+    "concern": "Dehydration",
+    "keyIngredients": "Hyaluronic acid",
+    "brand": "Field & Form · Demo",
+    "description": "Fictional sample listing for previewing the Aurélla catalog.",
+    "ingredients": "",
+    "usage": "",
+    "warnings": "",
+    "status": "published",
+    "featured": true,
+    "photos": [],
+    "variants": [
+      {
+        "id": "sample-variant-3",
+        "label": "30 ml",
+        "price": 2950,
+        "stock": 14,
+        "sku": "DEMO-SRM",
+        "swatch": "",
+        "photo": ""
+      }
+    ],
+    "revision": 1
+  },
+  {
+    "id": "sample-4",
+    "name": "Sheer Tint Balm",
+    "category": "Makeup",
+    "skin": "All skin types",
+    "concern": "",
+    "keyIngredients": "",
+    "brand": "Studio Petal · Demo",
+    "description": "Fictional sample listing for previewing the Aurélla catalog.",
+    "ingredients": "",
+    "usage": "",
+    "warnings": "",
+    "status": "published",
+    "featured": true,
+    "photos": [],
+    "variants": [
+      {
+        "id": "sample-variant-4",
+        "label": "Rosewood",
+        "price": 2200,
+        "stock": 6,
+        "sku": "DEMO-BLM",
+        "swatch": "#a25965",
+        "photo": ""
+      }
+    ],
+    "revision": 1
+  }
+]
