@@ -51,3 +51,4 @@
 .skin-prev{left:4px}.skin-next{right:4px}
 @media(max-width:850px){.skin-track{grid-auto-columns:calc((100% - 1.5rem)/3)}}
 @media(max-width:520px){.skin-track{grid-auto-columns:calc((100% - .75rem)/2)}.skin-tile{font-size:.9rem}}
+html{color-scheme:only light;background:#fff}body{background:#fff}

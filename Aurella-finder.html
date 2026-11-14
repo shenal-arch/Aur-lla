@@ -1,0 +1,91 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="only light"><title>Product Finder | Aurélla</title><style>*{box-sizing:border-box}body{margin:0;background:#fff;color:#222;font:16px/1.55 system-ui}header{border-bottom:1px solid #ddd}header div,main{width:min(700px,calc(100% - 32px));margin:auto}header div{display:flex;align-items:center;justify-content:space-between;min-height:64px}a{color:inherit}main{padding:24px 0}h1{margin:0}p{margin:.5rem 0}#log{display:flex;flex-direction:column;gap:9px}#log p,.result{padding:10px 14px;border-radius:10px;margin:0;max-width:92%;white-space:pre-wrap;overflow-wrap:anywhere}.guide{align-self:start;background:#f3f4f1}.shopper{align-self:end;background:#455440;color:#fff}.result{border:1px solid #c9d2c4;color:#30452e}#choices,form{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}button,input{font:inherit;min-height:44px;border:1px solid #697667;border-radius:6px;padding:8px 12px}button{cursor:pointer;background:#fff;color:#263b25}form input{flex:1;min-width:180px}form button{background:#455440;color:white}:focus-visible{outline:2px solid #755735;outline-offset:2px}html.drawer-mode header,html.drawer-mode h1{display:none}
+html{scroll-padding-top:1rem}
+.store-nav .nav-inner,.store-nav .nav-links,.form-pane,.summary,.card-body{min-width:0}
+.store-nav .nav-links a,.bag-item,.product-layout h1,.item{overflow-wrap:anywhere}
+#bag-drawer,#finder-drawer{height:100vh;height:100dvh}
+#bag-drawer{padding:clamp(12px,4vw,24px)}
+.bag-item>div{min-width:0}.bag-actions{flex-wrap:wrap;justify-content:flex-start}
+.finder-launcher{right:calc(16px + env(safe-area-inset-right));bottom:calc(16px + env(safe-area-inset-bottom))}
+@media(max-width:1100px){.store-nav .nav-inner{gap:.25rem 1rem}.store-nav .nav-links{flex-wrap:wrap}}
+@media(max-width:850px){.store-nav.mobile-open{position:sticky;top:0;max-height:100dvh;overflow:auto;z-index:30}.store-nav .nav-inner{column-gap:.25rem}.store-nav .nav-links>.department-panel{max-height:none}.store-nav .nav-links>button,.store-nav .nav-links>a{min-height:48px}.skin-slider .skin-arrow{width:44px;height:44px}}
+@media(min-width:761px) and (max-width:1024px){.catalog,#grid.catalog,#featured-grid.catalog,.collection-row .catalog{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:760px){.catalog,#grid.catalog,#featured-grid.catalog,.collection-row .catalog{grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem .65rem}.catalog .card-meta{flex-wrap:wrap}.catalog h3{min-height:0}.home-heading{align-items:flex-start}}
+@media(max-width:520px){.catalog-controls #search{width:100%}#catalog-sort .catalog-control-panel{left:0;right:auto;width:min(210px,calc(100vw - 135px))}#catalog-sort .catalog-control-panel label{white-space:normal;gap:8px}.bag-item{grid-template-columns:65px minmax(0,1fr);gap:10px}.bag-item img{width:65px;height:65px}.bag-footer{padding-bottom:env(safe-area-inset-bottom)}.item img{width:44px;height:44px}.item{gap:8px}.item strong{font-size:.85rem}.product-thumbs{gap:.35rem}}
+@media(forced-colors:active){button,a:focus-visible{outline:1px solid ButtonText}}
+</style><header><div><a href="Aurella-preview.html">Aurélla</a><a href="Aurella-shop.html">Shop</a></div></header><main><h1>Product Finder</h1><p>Find a cosmetic product for your routine. For medical concerns, speak with a healthcare professional.</p><div id="log" role="log" aria-label="Conversation"></div><div id="choices"></div><form><input name="message" aria-label="Your message" placeholder="Tell us what you’re looking for" maxlength="600" required><button>Send</button></form></main><script>if(new URLSearchParams(location.search).has('drawer'))document.documentElement.classList.add('drawer-mode');
+const catalog={"hair":[{"name":"Cantu Avocado Hydrating Conditioner 400ml","price":6950,"id":"cantu-avocado-hydrating-conditioner-400ml"},{"name":"Cantu Avocado Hydrating Lightweight Hair Milk 355ml","price":4680,"id":"cantu-avocado-hydrating-lightweight-hair-milk-355ml"}],"dry":[{"name":"Anua Birch 70% Moisture Boosting Cream 50ml","price":6800,"id":"anua-birch-70-moisture-boosting-cream-50ml"}],"spots":[{"name":"La Roche Posay Effaclar Duo+M Patch 22 Patches","price":9900,"id":"la-roche-posay-effaclar-duo-m-patch-22-patches"}],"sun":[{"name":"Beauty of Joseon Ginseng Moist Sun Serum SPF 50+ 50ml","price":10950,"id":"beauty-of-joseon-ginseng-moist-sun-serum-spf-50-50ml"}]};
+const log=document.querySelector('#log'),choices=document.querySelector('#choices'),form=document.querySelector('form'),input=form.elements.message;
+const money=new Intl.NumberFormat('en-LK',{style:'currency',currency:'LKR'});
+let topic='',step=0;
+function say(text,who='guide'){
+ const p=document.createElement('p');p.className=who;p.textContent=text;log.append(p);
+}
+function ask(text,options=[]){
+ say(text);choices.replaceChildren();
+ for(const option of options){const b=document.createElement('button');b.type='button';b.textContent=option;b.onclick=()=>answer(option);choices.append(b);}
+}
+function start(){
+ topic='';step=0;log.replaceChildren();
+ ask('Hello! What would you like help with today?',['Dry hair','Dry facial skin','Occasional blemishes','Sunscreen']);
+}
+function finish(text,key,limit=1){
+ ask(text,['Start over']);
+ for(const [i,p] of (catalog[key]||[]).slice(0,limit).entries()){
+  const a=document.createElement('a');a.className='result';a.href='Aurella-product.html?product='+encodeURIComponent(p.id);
+  a.textContent=(i?'Optional: ':'')+p.name+' · '+money.format(p.price);log.append(a);
+ }
+ topic='done';
+}
+function answer(value){
+ const t=value.trim().toLowerCase();
+ if(!t)return;if(t==='start over'){start();return;}
+ say(value,'shopper');choices.replaceChildren();
+ if(/difficulty breathing|swollen lips|swelling of (?:my |the )?(?:lips|tongue|throat)/.test(t)){finish('Seek emergency medical help now.');return;}
+ if(/bald patch|sudden (?:hair loss|shedding)|bleeding|blister|deep painful|persistent scalp|scalp pain/.test(t)){finish('A dermatologist can help assess this concern. I’ll pause product suggestions for now.');return;}
+ if(!topic||topic==='done'){
+  step=0;
+  if(/hair|ends|breakage|scalp|frizz/.test(t)){topic='hair';ask('Where is the problem most noticeable?',['Lengths and ends','Scalp','Both']);}
+  else if(/dry|tight|dehydrat/.test(t)){topic='dry';ask('Does your face mainly feel tight, or is it stinging, cracking or visibly irritated?',['Mostly tight','Stinging or irritated']);}
+  else if(/spot|blemish|acne|breakout/.test(t)){topic='spots';ask('Are these occasional surface spots or deep, painful or recurring breakouts?',['Occasional surface spots','Deep or recurring breakouts']);}
+  else if(/sun|spf/.test(t)){topic='sun';ask('What will you use it for?',['Everyday wear','Swimming or outdoor exercise']);}
+  else startUnknown();
+  return;
+ }
+ if(topic==='hair'){
+  if(step===0){
+   if(/scalp|both/.test(t)){finish('Scalp dryness, itching or flaking can have different causes. If it persists, ask a dermatologist. The conditioners in this preview are for hair lengths and ends.');return;}
+   if(!/end|length|strand/.test(t)){ask('Do you mainly notice it in the lengths and ends or on your scalp?',['Lengths and ends','Scalp','Both']);return;}
+   step++;ask('Is your hair straight, wavy, curly or coily?',['Straight','Wavy','Curly','Coily']);return;
+  }
+  if(step===1){
+   if(!/straight|wavy|curly|coily/.test(t)){ask('Which description is closest to your hair texture?',['Straight','Wavy','Curly','Coily']);return;}
+   if(/straight/.test(t)){finish('Start by looking for a lightweight rinse-out conditioner for the ends. The Cantu conditioner in the preview is aimed at textured hair, so I don’t have a confident match for you.');return;}
+   step++;ask('Do you already use a rinse-out conditioner after shampooing?',['Yes, regularly','No or rarely']);return;
+  }
+  if(/yes|regularly/.test(t)&&!/no|rarely/.test(t)){finish('If your lengths still feel rough after conditioning, try a small amount of leave-in hair milk on damp lengths and ends. Follow the label.','hairMilk');return;}
+  if(/no|rarely|sometimes/.test(t)){finish('Start with a rinse-out conditioner after shampooing. Follow the label and try that one change before adding a leave-in.','hair');return;}
+  ask('Do you currently condition after shampooing?',['Yes, regularly','No or rarely']);return;
+ }
+ if(topic==='dry'){
+  if(/sting|irritat|crack|rash/.test(t)){finish('If irritation persists or worsens, ask a dermatologist. Hold off on adding new products while your skin is irritated.');return;}
+  if(step===0&&/tight|dry/.test(t)){step++;ask('Do you need a verified fragrance-free formula or avoid specific ingredients?',['No known restrictions','I avoid fragrance or specific ingredients']);return;}
+  if(step===1&&/no known|none|^no$/.test(t)){finish('A moisturizing cream is a practical first step for skin that feels tight after washing. Check the ingredient list on the packaging before use.','dry');return;}
+  if(step===1){finish('I don’t have enough verified formula information to confirm a match for your restrictions. Check the exact package or ask a pharmacist before buying.');return;}
+  ask('Is it mostly tightness, or are you also noticing irritation?',['Mostly tight','Stinging or irritated']);return;
+ }
+ if(topic==='spots'){
+  if(/deep|painful|recurr|persistent/.test(t)){finish('A dermatologist can help assess deep, painful or recurring breakouts.');return;}
+  if(/occasional|surface/.test(t)){finish('A hydrocolloid patch is an option for covering an individual surface blemish. Follow the packaging for application and wear time.','spots');return;}
+  ask('Are they occasional surface spots or deep or recurring breakouts?',['Occasional surface spots','Deep or recurring breakouts']);return;
+ }
+ if(topic==='sun'){
+  if(/swim|outdoor|exercise|sweat/.test(t)){finish('For swimming or sweating, look for a sunscreen with verified water resistance. I don’t have a verified match in this preview.');return;}
+  if(/everyday|daily/.test(t)){finish('For everyday wear, this SPF 50+ serum is a catalog option. Apply and reapply according to the label.','sun');return;}
+  ask('Is it for everyday wear or for swimming or outdoor exercise?',['Everyday wear','Swimming or outdoor exercise']);
+ }
+}
+function startUnknown(){ask('I can help with these concerns. Which is closest to what you need?',['Dry hair','Dry facial skin','Occasional blemishes','Sunscreen']);}
+catalog.hairMilk=[catalog.hair[1]];
+form.onsubmit=event=>{event.preventDefault();answer(input.value);input.value='';input.focus();};
+start();
+</script></html>
