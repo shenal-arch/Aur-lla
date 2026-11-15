@@ -1,0 +1,2 @@
+CREATE TABLE IF NOT EXISTS write_guard (value INTEGER CHECK(value = 1));
+CREATE TABLE IF NOT EXISTS login_attempts (ip TEXT PRIMARY KEY, window INTEGER NOT NULL, attempts INTEGER NOT NULL);

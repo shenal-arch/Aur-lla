@@ -1,0 +1,11 @@
+{
+  "name": "aur-lla",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "aurella-store",
+      "database_id": "c86a5810-a576-4057-ac44-e192667ba15f",
+      "migrations_dir": "migrations"
+    }
+  ]
+}
