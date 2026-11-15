@@ -67,11 +67,42 @@ function product(input, key) {
   return p;
 }
 
+const stages=['Order received','Ready to dispatch','Dispatched','Order completed'];
+const legacy={Received:stages[0],Preparing:stages[1],Delivered:stages[3]};
+const payment=o=>o.method==='cod'?(o.paid?'Paid':'Awaiting cash on delivery'):'Test order — no payment collected';
+const summary=o=>({id:o.id,invoice:o.invoice,tracking:o.tracking,status:legacy[o.status]||o.status,payment:payment(o),total:o.total,currency:o.currency});
+let sending=false;
+async function sendPending(){
+ if(sending||!process.env.RESEND_API_KEY||!process.env.AURELLA_EMAIL_FROM||!process.env.AURELLA_PUBLIC_URL)return;
+ sending=true;
+ try{
+ for(const o of all('orders')){
+  if(!o.mail)continue;
+  for(const kind of ['merchant','customer']){
+   if(o.mail[kind]==='sent')continue;
+   try{
+    const link=new URL('/track/'+o.tracking,process.env.AURELLA_PUBLIC_URL).href;
+    const lines=o.items.map(i=>i.name+' / '+i.variant+' × '+i.qty+' — '+o.currency+' '+(i.price*i.qty).toFixed(2));
+    const body=[o.invoice,payment(o),...lines,'Delivery: '+o.currency+' '+o.delivery.toFixed(2),'Total: '+o.currency+' '+o.total.toFixed(2),'Amount paid: '+o.currency+' '+(o.paid?o.total:0).toFixed(2),'Track order: '+link];
+    if(kind==='merchant')body.push(o.customer.name,o.customer.email,o.customer.phone,o.customer.address,o.region);
+    const response=await fetch('https://api.resend.com/emails',{
+     method:'POST',signal:AbortSignal.timeout(10000),
+     headers:{Authorization:'Bearer '+process.env.RESEND_API_KEY,'Content-Type':'application/json','Idempotency-Key':o.id+'/'+kind},
+     body:JSON.stringify({from:process.env.AURELLA_EMAIL_FROM,to:[kind==='merchant'?'shenalrdemel@gmail.com':o.customer.email],subject:'Aurélla '+o.invoice+' — '+(kind==='merchant'?'New order':'Order confirmation'),text:body.join('\n')})
+    });
+    if(!response.ok)throw Error('Email provider HTTP '+response.status);
+    const latest=get('orders',o.id);latest.mail[kind]='sent';save('orders',o.id,latest);
+   }catch(error){console.error('Order email pending',o.invoice,kind,error.message);}
+  }
+ }
+ }finally{sending=false;}
+}
 function order(input){
   const c=config();
   const region=c.regions.find(r=>r.name===input.region);
   if(!region || (c.test?input.method!=='test':input.method!=='cod'||!region.cod)) fail('Choose an available delivery region and payment method.');
-  const customer=Object.fromEntries(['name','phone','address'].map(k=>[k,clean(input[k],300)]));
+  const customer=Object.fromEntries(['name','phone','address','email'].map(k=>[k,clean(input[k],300)]));
+  if(!/^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/.test(customer.email)) fail('Enter a valid email address.');
   if(!customer.name||!customer.address||!/^\+?[\d ()-]{7,24}$/.test(customer.phone)) fail('Enter your name, a valid phone number and delivery address.');
   if(!Array.isArray(input.items)||!input.items.length||input.items.length>100) fail('Your cart is empty or too large.');
   if(!/^[a-f0-9-]{36}$/.test(input.reference||'')) fail('Invalid checkout reference.');
@@ -81,7 +112,7 @@ function order(input){
     if(existing){
       if(JSON.stringify(customer)!==JSON.stringify(existing.customer)) fail('Checkout reference was already used.',409);
       db.exec('COMMIT');
-      return {id:existing.id,total:existing.total,currency:existing.currency};
+      return summary(existing);
     }
     const products=new Map();
     const items=input.items.map(line=>{
@@ -96,16 +127,16 @@ function order(input){
     const subtotalMinor=items.reduce((sum,line)=>sum+Math.round(line.price*100)*line.qty,0);
     if(!Number.isSafeInteger(subtotalMinor+region.fee*100)) fail('Order total is too large.');
     const subtotal=subtotalMinor/100;
-    const record={id:input.reference,customer,items,region:region.name,method:input.method,subtotal,delivery:region.fee,total:subtotal+region.fee,currency:c.currency,status:'Received',created:new Date().toISOString()};
+    const record={id:input.reference,customer,items,region:region.name,method:input.method,subtotal,delivery:region.fee,total:subtotal+region.fee,currency:c.currency,invoice:'AUR-'+id().toUpperCase(),tracking:id(),mail:{merchant:'pending',customer:'pending'},status:stages[0],created:new Date().toISOString()};
     for(const [key,p] of products){p.revision=(p.revision||0)+1;save('products',key,p);}
     save('orders',record.id,record);
     db.exec('COMMIT');
-    return {id:record.id,total:record.total,currency:record.currency};
+    return summary(record);
   } catch(error){db.exec('ROLLBACK');throw error;}
 }
 
 const mime = {'/app.js':'text/javascript','/style.css':'text/css','/':'text/html'};
-const pages = /^\/(?:shop|cart|checkout|admin|contact|delivery|privacy|product\/[a-z0-9-]+)?$/;
+const pages = /^\/(?:shop|cart|checkout|admin|contact|delivery|privacy|track\/[a-f0-9]{32}|product\/[a-z0-9-]+)?$/;
 export async function handleRequest(req,res){
   const send=(status,payload,type='application/json')=>{
     res.writeHead(status,{'Content-Type':type,'X-Content-Type-Options':'nosniff','Cache-Control':'no-store','Referrer-Policy':'same-origin','Content-Security-Policy':"default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; object-src 'none'; frame-ancestors 'none'; base-uri 'none'"});
@@ -125,6 +156,12 @@ export async function handleRequest(req,res){
     if(!['GET','HEAD'].includes(method)&&req.headers['sec-fetch-site'] && !['same-origin','none'].includes(req.headers['sec-fetch-site'])) fail('Request rejected.',403);
     if(method==='GET'&&path==='/api/catalog')return send(200,{settings:config(),products:all('products').filter(p=>p.status==='published')});
     if(method==='POST'&&path==='/api/order')return send(201,order(await json()));
+    if(method==='GET'&&/^\/api\/track\/[a-f0-9]{32}$/.test(path)){
+      const record=db.prepare("SELECT body FROM orders WHERE json_extract(body, '$.tracking')=?").get(path.split('/').pop());
+      if(!record)fail('Order unavailable.',404);
+      const o=JSON.parse(record.body);
+      return send(200,{invoice:o.invoice,status:legacy[o.status]||o.status,stages});
+    }
     if(method==='GET'&&/^\/media\/[a-f0-9]{32}$/.test(path)){
       const key=path.split('/').pop();
       const visible=admin||all('products').some(p=>p.status==='published'&&p.photos.some(photo=>photo.id===key));
@@ -200,8 +237,9 @@ export async function handleRequest(req,res){
       if(path==='/api/admin/order'&&method==='POST'){
         const input=await json();
         const record=get('orders',String(input.id));
-        if(!record||!['Received','Preparing','Dispatched','Delivered'].includes(input.status))fail('Choose a valid fulfillment status.');
+        if(!record||!stages.includes(input.status))fail('Choose a valid fulfillment status.');
         record.status=input.status;
+        if(record.method==='cod') record.paid=input.paid===true;
         save('orders',record.id,record);
         return send(200,record);
       }
@@ -243,6 +281,7 @@ if(process.argv[1] && import.meta.url===pathToFileURL(process.argv[1]).href){
     console.log(`Imported reference catalog. ${all('products').filter(p=>p.sourceUrl).length} reference products are in the database.`);
     closeDatabase();
   }else{
+    setInterval(()=>void sendPending().catch(console.error),15000).unref();
     createServer(handleRequest).listen(port,process.env.AURELLA_HOST||'127.0.0.1',()=>console.log(`Aurélla is running at http://localhost:${port}`));
   }
 }

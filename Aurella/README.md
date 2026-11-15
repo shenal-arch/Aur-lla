@@ -27,3 +27,16 @@ Open **Cosmetics.lk reference** in the product editor for the original listing a
 4. After confirming delivery details, turn off **Test mode** to accept cash-on-delivery orders in enabled regions. Online payments require a provider integration, merchant account, checkout credentials, and webhook signing secret.
 
 Products, orders, photos, settings, and admin sessions live in `data/store.sqlite`. Back up the database while the server is stopped. For public hosting, use an HTTPS reverse proxy, a persistent writable volume, and `AURELLA_SECURE_COOKIES=1`. The server binds to loopback by default. Set `AURELLA_HOST` only when your deployment requires another bind address.
+
+## Order email and tracking
+
+Run the Node storefront for real orders. The standalone HTML preview only simulates checkout.
+
+Set these environment variables on the server:
+- RESEND_API_KEY from Resend
+- AURELLA_EMAIL_FROM using a verified sending domain
+- AURELLA_PUBLIC_URL using the public HTTPS origin customers can access
+
+Orders are saved with an invoice number and a private tracking link. The server queues confirmation emails for shenalrdemel@gmail.com and the customer and retries pending sends while running. Dashboard email status shows provider acceptance. Test checkout never collects payment. In live cash-on-delivery mode, use Payment collected after receiving funds. Online payment gateways still need integration.
+
+Open /admin to manage products and orders. The customer tracking link shows Order received, Ready to dispatch, Dispatched and Order completed.
