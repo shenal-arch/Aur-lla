@@ -106,7 +106,7 @@ function detail(p,preview=false){
   document.title=p.name+' | '+settings.name;
   main.innerHTML='<section class="shell section"><a href="/shop" id="back">Back to shop</a><div class="split"><div class="stack"><div id="primary">'+photo(p)+'</div><div class="row">'+p.photos.map((image,i)=>'<button type="button" class="secondary thumb-button" data-index="'+i+'" aria-label="View photo '+(i+1)+'"><img class="thumb" src="/media/'+esc(image.id)+'" alt=""></button>').join('')+'</div></div><div><p class="eyebrow">'+esc(p.brand)+'</p><h1>'+esc(p.name)+'</h1><p>'+esc(p.description)+'</p><form id="add" class="stack"><label>Size or shade<select id="variant">'+p.variants.map(v=>'<option value="'+esc(v.id)+'">'+esc(v.label)+'</option>').join('')+'</select></label><div id="variation" aria-live="polite"></div><label>Quantity<input id="qty" type="number" value="1" min="1" required></label><button id="add-button" '+(preview?'disabled':'')+'>'+(preview?'Admin preview':'Add to Cart')+'</button><a href="/delivery">Delivery &amp; Returns</a></form><div class="section">'+[['Who it’s for',[p.skin,p.concern].filter(Boolean).join(' · ')],['Key ingredients',p.keyIngredients],['Full ingredients',p.ingredients],['How to use',p.usage],['Manufacturer warnings',p.warnings]].map(([label,value])=>'<details><summary>'+label+'</summary><p class="prose">'+esc(value||'Details unavailable.')+'</p></details>').join('')+'</div></div></div></section>';
   const back=document.querySelector('#back');
-  if(preview){back.href='/admin';back.textContent='Back to dashboard';}
+  if(preview){back.href='/admin?view=products';back.textContent='Back to products';}
   else if(document.referrer.startsWith(location.origin+'/shop'))back.href=document.referrer;
   const select=document.querySelector('#variant'),qty=document.querySelector('#qty'),button=document.querySelector('#add-button');
   const variant=()=>p.variants.find(v=>v.id===select.value);
@@ -176,29 +176,83 @@ function handle(form,callback){
   };
 }
 const errorBox='<p class="error" role="alert"></p>';
+const adminPages={overview:'Overview',orders:'Orders',products:'Products',settings:'Settings'};
+const statuses=['Order received','Ready to dispatch','Dispatched','Order completed'];
+const deliveryStatus=o=>({Received:statuses[0],Preparing:statuses[1],Delivered:statuses[3]}[o.status]||o.status);
+const paymentStatus=o=>o.method==='test'?'Test order':o.paid?'Paid':'Payment pending';
+const orderRef=o=>o.invoice||o.id;
+const orderDate=o=>o.created?new Intl.DateTimeFormat('en-LK',{dateStyle:'medium',timeZone:'Asia/Colombo'}).format(new Date(o.created)):'—';
+const adminUrl=(page,extra='')=>'/admin?view='+page+extra;
+const badge=(label,tone='')=>'<span class="admin-badge '+tone+'">'+esc(label)+'</span>';
+function table(headings, rows, empty){
+ return '<div class="admin-table-wrap"><table><thead><tr>'+headings.map(h=>'<th scope="col">'+esc(h)+'</th>').join('')+'</tr></thead><tbody>'+(rows.join('')||'<tr><td colspan="'+headings.length+'" class="admin-empty">'+esc(empty)+'</td></tr>')+'</tbody></table></div>';
+}
+function cells(values){return '<tr>'+values.map(v=>'<td>'+v+'</td>').join('')+'</tr>';}
+function adminFrame(page,content,action=''){
+ main.innerHTML='<div class="admin-layout"><aside class="admin-sidebar"><a class="admin-brand" href="/admin">'+esc(settings.name)+'</a><nav aria-label="Administration">'+Object.entries(adminPages).map(([key,label])=>'<a href="'+adminUrl(key)+'"'+(page===key?' aria-current="page"':'')+'>'+label+'</a>').join('')+'</nav><button id="logout" class="secondary">Sign out</button></aside><div class="admin-content"><div class="admin-heading"><h1>'+adminPages[page]+'</h1>'+action+'</div>'+content+'</div></div>';
+ document.querySelector('#logout').onclick=async()=>{try{await api('admin/logout',{});await dashboard();}catch(error){notify(error.message);}};
+}
+function orderTable(orders,empty){
+ return table(['Order','Customer','Delivery','Payment','Total'],orders.map(o=>cells([
+ '<a href="'+adminUrl('orders','&order='+encodeURIComponent(o.id))+'">'+esc(orderRef(o))+'</a><small>'+esc(orderDate(o))+'</small>',
+ esc(o.customer.name),badge(deliveryStatus(o),deliveryStatus(o)===statuses[3]?'good':''),badge(paymentStatus(o),o.paid?'good':''),
+ money(o.total,o.currency)
+ ])),empty);
+}
+function renderOverview(){
+ const live=admin.orders.filter(o=>o.method!=='test');
+ const paid=live.filter(o=>o.paid);
+ const sums=new Map();
+ for(const o of paid)sums.set(o.currency,(sums.get(o.currency)||0)+Math.round(o.total*100));
+ const revenue=[...sums].map(([currency,total])=>money(total/100,currency)).join(' · ')||money(0,admin.settings.currency);
+ const metrics=[['Payment collected',revenue,'Paid orders, including delivery'],['Products sold',paid.reduce((n,o)=>n+o.items.reduce((u,i)=>u+i.qty,0),0),'Units on paid orders'],['Orders received',live.length,'All real orders'],['Awaiting dispatch',live.filter(o=>statuses.indexOf(deliveryStatus(o))<2).length,'Received or ready to dispatch']];
+ adminFrame('overview','<div class="admin-kpis">'+metrics.map(([label,value,note])=>'<div class="admin-panel admin-kpi"><span>'+label+'</span><strong>'+value+'</strong><small>'+note+'</small></div>').join('')+'</div><section class="admin-panel"><div class="admin-panel-head"><h2>Recent orders</h2><a href="'+adminUrl('orders')+'">View all orders</a></div>'+orderTable(admin.orders.slice(0,6),'Orders will appear here after checkout.')+'</section>');
+}
+function renderOrders(params){
+ const active=admin.orders.find(o=>o.id===params.get('order'));
+ adminFrame('orders','<section class="admin-panel"><div class="admin-tools"><label>Search orders<input id="order-search" type="search" placeholder="Invoice, customer or email"></label><label>Delivery status<select id="order-filter"><option value="">All statuses</option>'+statuses.map(s=>'<option>'+s+'</option>').join('')+'</select></label></div><div id="orders-list"></div></section>'+(active?'<section id="order-detail" class="admin-panel"><div class="admin-panel-head"><h2>'+esc(orderRef(active))+'</h2><a href="'+adminUrl('orders')+'">Close details</a></div><div class="admin-detail"><div><h3>Delivery address</h3><p>'+[active.customer.name,active.customer.email,active.customer.phone,active.customer.address,active.region].filter(Boolean).map(esc).join('<br>')+'</p></div><div><h3>Payment and email</h3><p>'+esc(paymentStatus(active))+'<br>'+esc(active.mail?Object.entries(active.mail).map(([k,v])=>k+' '+v).join(' · '):'Email status unavailable')+'</p>'+(active.tracking?'<a href="/track/'+esc(active.tracking)+'">Open tracking page</a>':'')+'</div></div>'+table(['Product','Quantity','Price'],active.items.map(i=>cells([esc(i.name)+'<small>'+esc(i.variant)+'</small>',i.qty,money(i.price,active.currency)])),'No items.')+'<p>Delivery '+money(active.delivery,active.currency)+' · Order total <strong>'+money(active.total,active.currency)+'</strong></p><form class="admin-tools" id="order-update"><label>Delivery status<select name="status">'+statuses.map(s=>'<option'+(s===deliveryStatus(active)?' selected':'')+'>'+s+'</option>').join('')+'</select></label>'+(active.method==='cod'?'<label class="check"><input type="checkbox" name="paid" '+(active.paid?'checked':'')+'> Payment collected</label>':'')+'<button>Save changes</button>'+errorBox+'</form></section>':''));
+ const search=document.querySelector('#order-search'),filter=document.querySelector('#order-filter');
+ const render=()=>{const q=search.value.trim().toLowerCase();document.querySelector('#orders-list').innerHTML=orderTable(admin.orders.filter(o=>(!filter.value||filter.value===deliveryStatus(o))&&[o.id,orderRef(o),o.customer.name,o.customer.email].join(' ').toLowerCase().includes(q)),'No matching orders.');};
+ search.oninput=render;filter.onchange=render;render();
+ if(active){
+  document.querySelector('#order-detail').scrollIntoView({block:'nearest'});
+  handle(document.querySelector('#order-update'),async d=>{await api('admin/order',{id:active.id,status:d.get('status'),paid:d.has('paid')});await dashboard();notify('Order updated');});
+ }
+}
+function renderProducts(){
+ adminFrame('products','<section class="admin-panel"><div class="admin-tools"><label>Search products<input id="admin-search" type="search" placeholder="Product, brand or SKU"></label><label>Status<select id="product-filter"><option value="">All statuses</option><option>published</option><option>draft</option><option>archived</option></select></label></div><div id="admin-products"></div></section>','<button id="new">Add product</button>');
+ const search=document.querySelector('#admin-search'),filter=document.querySelector('#product-filter');
+ const render=()=>{
+  const matches=admin.products.filter(p=>(!filter.value||filter.value===p.status)&&[p.name,p.brand,...p.variants.map(v=>v.sku)].join(' ').toLowerCase().includes(search.value.trim().toLowerCase()));
+  document.querySelector('#admin-products').innerHTML=table(['Product','Status','Price from','Units in stock',''],matches.map(p=>cells([
+   '<div class="admin-product">'+(p.photos[0]?'<img src="/media/'+esc(p.photos[0].id)+'" alt="">':'')+'<div><strong>'+esc(p.name)+'</strong><small>'+esc(p.brand)+'</small></div></div>',
+   badge(p.status,p.status==='published'?'good':''),money(Math.min(...p.variants.map(v=>v.price)),admin.settings.currency),p.variants.reduce((sum,v)=>sum+v.stock,0),
+   '<button class="secondary" data-edit="'+esc(p.id)+'">View / edit</button>'
+  ])),'No matching products.');
+  document.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>editor(admin.products.find(p=>p.id===b.dataset.edit)));
+ };
+ search.oninput=render;filter.onchange=render;render();
+ document.querySelector('#new').onclick=()=>editor();
+}
 async function dashboard(){
-  try{admin=await api('admin/data');}
-  catch(error){
-    if(error.status!==401)throw error;
-    main.innerHTML=section('Store admin','<form id="login" class="panel stack">'+field('password','Admin password','','password')+errorBox+'<button>Sign in</button></form>');
-    handle(document.querySelector('#login'),async d=>{await api('admin/login',Object.fromEntries(d));await dashboard();});return;
-  }
-  main.innerHTML=section('Store admin','<div class="row"><button id="new">Add product</button><button id="settings" class="secondary">Store settings</button><button id="logout" class="secondary">Sign out</button></div><div class="section"><h2>Products</h2><label>Search catalog<input id="admin-search" type="search" placeholder="Product, brand or SKU"></label><div id="admin-products" class="stack"></div></div><section><h2>Orders</h2><div class="stack">'+(admin.orders.length?admin.orders.map(o=>'<details class="panel"><summary>'+esc(o.invoice||o.id)+' · '+esc(o.status)+' · '+money(o.total,o.currency)+'</summary><p>'+esc(o.customer.name)+' · '+esc(o.customer.email)+' · '+esc(o.customer.phone)+' · '+esc(o.customer.address)+' · '+esc(o.region)+'</p><ul>'+o.items.map(i=>'<li>'+esc(i.name+' — '+i.variant+' × '+i.qty)+'</li>').join('')+'</ul><p>Payment method: '+esc(o.method)+' · '+(o.method==='cod'?(o.paid?'Paid':'Awaiting payment'):'Test order')+'</p><p>Email status: '+esc(o.mail?Object.entries(o.mail).map(([k,v])=>k+' '+v).join(', '):'Legacy order')+'</p><form class="row order-status" data-id="'+esc(o.id)+'"><label>Fulfillment status<select name="status">'+['Order received','Ready to dispatch','Dispatched','Order completed'].map(s=>'<option '+(s===({Received:'Order received',Preparing:'Ready to dispatch',Delivered:'Order completed'}[o.status]||o.status)?'selected':'')+'>'+s+'</option>').join('')+'</select></label>'+(o.method==='cod'?'<label class="check"><input type="checkbox" name="paid" '+(o.paid?'checked':'')+'> Payment collected</label>':'')+'<button>Update</button>'+errorBox+'</form></details>').join(''):'<p>No orders yet.</p>')+'</div></section>');
-  const search=document.querySelector('#admin-search');
-  const render=()=>{
-    const matches=admin.products.filter(p=>[p.name,p.brand,...p.variants.map(v=>v.sku)].join(' ').toLowerCase().includes(search.value.toLowerCase()));
-    document.querySelector('#admin-products').innerHTML=matches.length?matches.map(p=>'<div class="panel row spaced"><div><strong>'+esc(p.name)+'</strong><br><span class="small">'+esc(p.brand+' · '+p.status)+' · '+money(Math.min(...p.variants.map(v=>v.price)))+' · '+p.variants.reduce((sum,v)=>sum+v.stock,0)+' in stock</span></div><button class="secondary" data-edit="'+esc(p.id)+'">Edit</button></div>').join(''):'<p>No matching products.</p>';
-    document.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>editor(admin.products.find(p=>p.id===b.dataset.edit)));
-  };
-  search.oninput=render;render();
-  document.querySelector('#new').onclick=()=>editor();
-  document.querySelector('#settings').onclick=settingsEditor;
-  document.querySelector('#logout').onclick=async()=>{await api('admin/logout',{});await dashboard();};
-  document.querySelectorAll('.order-status').forEach(form=>handle(form,async d=>{await api('admin/order',{id:form.dataset.id,status:d.get('status'),paid:d.has('paid')});await dashboard();notify('Fulfillment updated');}));
+ document.body.classList.add('admin-mode');
+ try{admin=await api('admin/data');}
+ catch(error){
+  if(error.status!==401)throw error;
+  main.innerHTML='<section class="admin-login admin-panel"><p class="admin-brand">'+esc(settings.name)+'</p><h1>Admin sign in</h1><form id="login" class="stack">'+field('password','Admin password','','password')+errorBox+'<button>Sign in</button></form></section>';
+  document.querySelector('#login input').autocomplete='current-password';
+  handle(document.querySelector('#login'),async d=>{await api('admin/login',Object.fromEntries(d));await dashboard();});return;
+ }
+ const params=new URLSearchParams(location.search);
+ const view=params.get('view');
+ if(view==='orders')renderOrders(params);
+ else if(view==='products')renderProducts();
+ else if(view==='settings')settingsEditor();
+ else renderOverview();
 }
 function editor(original){
   const p=structuredClone(original||{status:'draft',photos:[],variants:[{label:'',sku:'',price:'',stock:0,swatch:'',photo:''}]});
-  main.innerHTML=section(original?'Edit product':'New product','<form id="editor" class="stack"><div class="row"><button type="button" class="secondary" id="back-admin">Back to dashboard</button>'+(original?'<button type="button" id="preview" class="secondary">Preview saved product</button><button type="button" class="secondary" id="remove-product">Delete product</button>':'')+'</div><div class="panel stack"><div class="form-grid">'+[['name','Product name'],['brand','Brand'],['category','Category'],['skin','Skin types (comma-separated)'],['concern','Skin concerns (comma-separated)'],['keyIngredients','Key ingredients (comma-separated)']].map(([k,v])=>field(k,v,p[k])).join('')+'</div>'+[['description','Description'],['ingredients','Full ingredients'],['usage','How to use'],['warnings','Manufacturer warnings']].map(([k,v])=>area(k,v,p[k])).join('')+'<label>Status<select name="status">'+['draft','published','archived'].map(s=>'<option '+(s===p.status?'selected':'')+'>'+s+'</option>').join('')+'</select></label><label class="check"><input type="checkbox" name="featured" '+(p.featured?'checked':'')+'> Featured on homepage</label></div><section class="panel stack"><h2>Photos</h2><label>Upload photos<input id="upload" type="file" accept="image/jpeg,image/png,image/webp" multiple></label><p id="upload-status" role="status"></p><div id="photos" class="stack"></div></section><section class="panel stack"><h2>Variants</h2><div id="variants" class="stack"></div><button type="button" class="secondary" id="add-variant">Add variant</button></section>'+errorBox+'<button id="save-product">Save product</button></form>');
+  adminFrame('products', '<h2>'+(original?'Edit product':'New product')+'</h2>'+'<form id="editor" class="stack"><div class="row"><button type="button" class="secondary" id="back-admin">Back to products</button>'+(original?'<button type="button" id="preview" class="secondary">Preview saved product</button><button type="button" class="secondary" id="remove-product">Delete product</button>':'')+'</div><div class="panel stack"><div class="form-grid">'+[['name','Product name'],['brand','Brand'],['category','Category'],['skin','Skin types (comma-separated)'],['concern','Skin concerns (comma-separated)'],['keyIngredients','Key ingredients (comma-separated)']].map(([k,v])=>field(k,v,p[k])).join('')+'</div>'+[['description','Description'],['ingredients','Full ingredients'],['usage','How to use'],['warnings','Manufacturer warnings']].map(([k,v])=>area(k,v,p[k])).join('')+'<label>Status<select name="status">'+['draft','published','archived'].map(s=>'<option '+(s===p.status?'selected':'')+'>'+s+'</option>').join('')+'</select></label><label class="check"><input type="checkbox" name="featured" '+(p.featured?'checked':'')+'> Featured on homepage</label></div><section class="panel stack"><h2>Photos</h2><label>Upload photos<input id="upload" type="file" accept="image/jpeg,image/png,image/webp" multiple></label><p id="upload-status" role="status"></p><div id="photos" class="stack"></div></section><section class="panel stack"><h2>Variants</h2><div id="variants" class="stack"></div><button type="button" class="secondary" id="add-variant">Add variant</button></section>'+errorBox+'<button id="save-product">Save product</button></form>');
   const form=document.querySelector('#editor');
   if(p.sourceUrl){
     const reference=document.createElement('details');
@@ -258,8 +312,8 @@ function editor(original){
 }
 function settingsEditor(){
   const s=admin.settings;
-  main.innerHTML=section('Store settings','<form id="configuration" class="panel stack">'+field('name','Store name',s.name)+field('currency','Currency code',s.currency)+field('contact','Contact details',s.contact)+area('delivery','Delivery & Returns policy',s.delivery)+area('privacy','Privacy policy',s.privacy)+area('regions','Delivery regions (one per line: name | fee | yes/no for cash on delivery)',s.regions.map(r=>r.name+' | '+r.fee+' | '+(r.cod?'yes':'no')).join('\n'))+'<label class="check"><input name="test" type="checkbox" '+(s.test?'checked':'')+'> Test mode</label>'+errorBox+'<div class="row"><button>Save settings</button><button class="secondary" type="button" id="settings-back">Back</button></div></form>');
-  document.querySelector('#settings-back').onclick=dashboard;
+  adminFrame('settings','<form id="configuration" class="panel stack">'+field('name','Store name',s.name)+field('currency','Currency code',s.currency)+field('contact','Contact details',s.contact)+area('delivery','Delivery & Returns policy',s.delivery)+area('privacy','Privacy policy',s.privacy)+area('regions','Delivery regions (one per line: name | fee | yes/no for cash on delivery)',s.regions.map(r=>r.name+' | '+r.fee+' | '+(r.cod?'yes':'no')).join('\n'))+'<label class="check"><input name="test" type="checkbox" '+(s.test?'checked':'')+'> Test mode</label>'+errorBox+'<div class="row"><button>Save settings</button><button class="secondary" type="button" id="settings-back">Back</button></div></form>');
+  document.querySelector('#settings-back').onclick=()=>location.assign(adminUrl('overview'));
   handle(document.querySelector('#configuration'),async data=>{
     const values=Object.fromEntries(data);
     const regions=listLines(values.regions).map(line=>{const [name,fee,cod]=line.split('|').map(x=>x.trim());return {name,fee:fee?Number(fee):-1,cod:cod==='yes'};});
