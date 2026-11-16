@@ -250,10 +250,58 @@ async function dashboard(){
  else if(view==='settings')settingsEditor();
  else renderOverview();
 }
+const localBeautyBrands=["Acnes","Anua","Aunt Jackies","Aveeno","Balance Active Formula","Beauty of Joseon","Cantu","CeraVe","Cetaphil","COSRX","Dove","Dr. Althea","Garnier","La Roche-Posay","L’Oréal Paris","Maybelline","Medicube","Neutrogena","NIVEA","Palmer’s","Redwin","Romantic Collection","Sunthera3","The Ordinary","Vaseline"];
+function brandField(value=''){
+ const choices=[...new Set([...localBeautyBrands,...admin.products.map(p=>p.brand),value].filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+ return '<label>Brand<select id="brand-select" required><option value="">Select a brand</option>'+choices.map(brand=>'<option'+(brand===value?' selected':'')+'>'+esc(brand)+'</option>').join('')+'<option data-custom>Create new brand…</option></select></label><div id="custom-brand" hidden><label>Brand name<input id="brand-custom-input" maxlength="300" disabled aria-describedby="custom-brand-help"></label><small id="custom-brand-help">Press Enter to add this brand.</small></div>';
+}
+const categoryOptions=['Body care','Cleansers','Deodorants','Essences','Fragrance','Hair care','Makeup','Moisturisers','Mother & Baby','Serums','Sets & Bundles','Sun protection','Other'];
+function categoryField(value=''){
+ const choices=[...new Set([...categoryOptions,...admin.products.map(p=>p.category),value].filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+ return '<label>Category<select name="category" required><option value="">Select a category</option>'+choices.map(category=>'<option'+(category===value?' selected':'')+'>'+esc(category)+'</option>').join('')+'</select></label>';
+}
+function tagField(name,label,value,defaults){
+ const selected=list(value);
+ const choices=[...new Set([...defaults,...admin.products.flatMap(p=>list(p[name])),...selected])].sort((a,b)=>a.localeCompare(b));
+ return '<div class="admin-tag-field"><span id="label-'+name+'">'+label+'</span><details class="admin-tag-picker"><summary aria-labelledby="label-'+name+' summary-'+name+'"><span id="summary-'+name+'">'+(selected.length?selected.length+' selected':'Select options')+'</span></summary><div class="admin-tag-options" role="group" aria-labelledby="label-'+name+'">'+choices.map(option=>'<label class="check"><input type="checkbox" name="'+name+'" value="'+esc(option)+'"'+(selected.includes(option)?' checked':'')+'>'+esc(option)+'</label>').join('')+'</div></details></div>';
+}
 function editor(original){
   const p=structuredClone(original||{status:'draft',photos:[],variants:[{label:'',sku:'',price:'',stock:0,swatch:'',photo:''}]});
-  adminFrame('products', '<h2>'+(original?'Edit product':'New product')+'</h2>'+'<form id="editor" class="stack"><div class="row"><button type="button" class="secondary" id="back-admin">Back to products</button>'+(original?'<button type="button" id="preview" class="secondary">Preview saved product</button><button type="button" class="secondary" id="remove-product">Delete product</button>':'')+'</div><div class="panel stack"><div class="form-grid">'+[['name','Product name'],['brand','Brand'],['category','Category'],['skin','Skin types (comma-separated)'],['concern','Skin concerns (comma-separated)'],['keyIngredients','Key ingredients (comma-separated)']].map(([k,v])=>field(k,v,p[k])).join('')+'</div>'+[['description','Description'],['ingredients','Full ingredients'],['usage','How to use'],['warnings','Manufacturer warnings']].map(([k,v])=>area(k,v,p[k])).join('')+'<label>Status<select name="status">'+['draft','published','archived'].map(s=>'<option '+(s===p.status?'selected':'')+'>'+s+'</option>').join('')+'</select></label><label class="check"><input type="checkbox" name="featured" '+(p.featured?'checked':'')+'> Featured on homepage</label></div><section class="panel stack"><h2>Photos</h2><label>Upload photos<input id="upload" type="file" accept="image/jpeg,image/png,image/webp" multiple></label><p id="upload-status" role="status"></p><div id="photos" class="stack"></div></section><section class="panel stack"><h2>Variants</h2><div id="variants" class="stack"></div><button type="button" class="secondary" id="add-variant">Add variant</button></section>'+errorBox+'<button id="save-product">Save product</button></form>');
+  adminFrame('products', '<h2>'+(original?'Edit product':'New product')+'</h2>'+'<form id="editor" class="stack"><div class="row"><button type="button" class="secondary" id="back-admin">Back to products</button>'+(original?'<button type="button" id="preview" class="secondary">Preview saved product</button><button type="button" class="secondary" id="remove-product">Delete product</button>':'')+'</div><div class="panel stack"><div class="form-grid product-fields">'+field('name','Product name',p.name)+brandField(p.brand)+categoryField(p.category)+tagField('skin','Skin types',p.skin,['All skin types','Combination skin','Dry skin','Normal skin','Oily skin','Sensitive skin'])+tagField('concern','Skin concerns',p.concern,['Blemishes','Dark spots','Dehydration','Dryness','Dullness','Excess oil','Redness','Signs of aging','Uneven texture'])+field('keyIngredients','Key ingredients',p.keyIngredients)+'</div>'+[['description','Description'],['ingredients','Full ingredients'],['usage','How to use'],['warnings','Manufacturer warnings']].map(([k,v])=>area(k,v,p[k])).join('')+'<label>Status<select name="status">'+['draft','published','archived'].map(s=>'<option '+(s===p.status?'selected':'')+'>'+s+'</option>').join('')+'</select></label><label class="check"><input type="checkbox" name="featured" '+(p.featured?'checked':'')+'> Featured on homepage</label></div><section class="panel stack"><h2>Photos</h2><label>Upload photos<input id="upload" type="file" accept="image/jpeg,image/png,image/webp" multiple></label><p id="upload-status" role="status"></p><div id="photos" class="stack"></div></section><section class="panel stack"><h2>Variants</h2><div id="variants" class="stack"></div><button type="button" class="secondary" id="add-variant">Add variant</button></section>'+errorBox+'<button id="save-product">Save product</button></form>');
   const form=document.querySelector('#editor');
+  for(const picker of form.querySelectorAll('.admin-tag-picker')){
+    const summary=picker.querySelector('summary span');
+    picker.onchange=()=>{
+      const count=picker.querySelectorAll('input:checked').length;
+      summary.textContent=count?count+' selected':'Select options';
+    };
+    picker.onkeydown=event=>{
+      if(event.key==='Escape'&&picker.open){picker.open=false;picker.querySelector('summary').focus();}
+    };
+  }
+  const brandSelect=form.querySelector('#brand-select');
+  const customBrand=form.querySelector('#brand-custom-input');
+  const isCustom=()=>brandSelect.selectedOptions[0]?.hasAttribute('data-custom');
+  brandSelect.onchange=()=>{
+    const custom=isCustom();
+    form.querySelector('#custom-brand').hidden=!custom;
+    customBrand.disabled=!custom;
+    customBrand.required=custom;
+    if(custom)customBrand.focus();
+  };
+  customBrand.addEventListener('keydown',event=>{
+    if(event.key!=='Enter'||event.isComposing)return;
+    event.preventDefault();
+    const name=customBrand.value.trim();
+    if(!name){customBrand.reportValidity();return;}
+    const match=[...brandSelect.options].find(option=>!option.hasAttribute('data-custom')&&option.value.toLowerCase()===name.toLowerCase());
+    const option=match||new Option(name,name);
+    if(!match)brandSelect.add(option,brandSelect.querySelector('[data-custom]'));
+    brandSelect.value=option.value;
+    brandSelect.onchange();
+    brandSelect.focus();
+    notify('Brand selected. Save the product to keep it.');
+  });
   if(p.sourceUrl){
     const reference=document.createElement('details');
     reference.className='panel';
@@ -305,6 +353,8 @@ function editor(original){
   };
   handle(form,async data=>{
     const values=Object.fromEntries(data);
+    values.brand=isCustom()?customBrand.value.trim():brandSelect.value;
+    for(const name of ['skin','concern'])values[name]=data.getAll(name).join(', ');
     delete values.alt;delete values.photo;delete values.label;delete values.sku;delete values.price;delete values.stock;delete values.swatch;
     await api('admin/product',{...p,...values,featured:data.has('featured'),variants:p.variants.map(v=>({...v,price:Number(v.price),stock:v.stock===''?-1:Number(v.stock)}))});
     await dashboard();notify('Product saved');
